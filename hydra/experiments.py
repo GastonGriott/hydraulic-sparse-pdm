@@ -205,11 +205,22 @@ def model_zoo():
     return zoo
 
 
+def _pipe(estimator_factory):
+    """Pipeline con StandardScaler + estimador. Escalar es CRÍTICO para SVM/KNN
+    (si no, SVM sobre features sin escalar se vuelve lentísimo / no converge) y es
+    inocuo para árboles/boosting. El scaler se ajusta dentro de cada fold (sin fuga)."""
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+    return Pipeline([("sc", StandardScaler()), ("clf", estimator_factory())])
+
+
 def tune_uniform(estimator_factory, param_dist, X, y, n_iter=80, seed=0):
-    """RandomizedSearchCV con presupuesto fijo (mismo para todas las familias)."""
+    """RandomizedSearchCV con presupuesto fijo (mismo para todas las familias),
+    sobre un pipeline escalado. Devuelve best_params_ con prefijo 'clf__'."""
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+    pdist = {f"clf__{k}": v for k, v in param_dist.items()}
     skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=seed)
-    rs = RandomizedSearchCV(estimator_factory(), param_dist, n_iter=n_iter, scoring="f1_macro",
+    rs = RandomizedSearchCV(_pipe(estimator_factory), pdist, n_iter=n_iter, scoring="f1_macro",
                             cv=skf, random_state=seed, n_jobs=-1, refit=True)
     rs.fit(X, y)
     return rs.best_params_, float(rs.best_score_)
@@ -222,15 +233,13 @@ def multiseed_f1(estimator_factory, params, X, y, n_seeds=30, jobs=-1):
     """Macro-F1 de test sobre n_seeds splits 80/20 estratificados. Paralelo."""
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import f1_score
-    from sklearn.preprocessing import StandardScaler
     from joblib import Parallel, delayed
 
     def one(seed):
         Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
-        sc = StandardScaler().fit(Xtr)
-        m = estimator_factory().set_params(**params)
-        m.fit(sc.transform(Xtr), ytr)
-        return float(f1_score(yte, m.predict(sc.transform(Xte)), average="macro"))
+        m = _pipe(estimator_factory).set_params(**params)   # params vienen con prefijo 'clf__'
+        m.fit(Xtr, ytr)                                      # el pipeline escala con fit en train
+        return float(f1_score(yte, m.predict(Xte), average="macro"))
 
     return list(Parallel(n_jobs=jobs)(delayed(one)(s) for s in range(42, 42 + n_seeds)))
 
