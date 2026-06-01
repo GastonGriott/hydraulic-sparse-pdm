@@ -110,34 +110,37 @@ def _lgbm(seed=42):
                               n_jobs=1, random_state=seed, verbosity=-1)
 
 
-def _cv_f1(X, y, seed=42, folds=4):
+def _cv_f1(X, y, seed=42, folds=4, jobs=1):
     from sklearn.model_selection import StratifiedKFold, cross_val_score
     skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
     return float(cross_val_score(_lgbm(seed), X, y, cv=skf,
-                                 scoring="f1_macro", n_jobs=folds).mean())
+                                 scoring="f1_macro", n_jobs=jobs).mean())
 
 
 # --------------------------------------------------------------------------- #
 # #1 forward block selection (con exclusión de virtuales)                     #
 # --------------------------------------------------------------------------- #
 def forward_block_selection(X, feature_names, y, candidate_sensors,
-                            target_f1=0.95, seed=42, max_blocks=8, progress=None):
+                            target_f1=0.95, seed=42, max_blocks=8, progress=None, jobs=-1):
     """Greedy: agrega el bloque-sensor que más sube el macro-F1 (CV) hasta llegar
-    a target_f1 o max_blocks. Devuelve la curva [(sensor, f1)]."""
+    a target_f1 o max_blocks. Devuelve la curva [(sensor, f1)].
+
+    Paraleliza la evaluacion de los sensores candidatos sobre TODOS los nucleos
+    (joblib jobs=-1); cada CV interno corre con 1 nucleo para no sobre-suscribir."""
+    from joblib import Parallel, delayed
     cols = block_columns(feature_names)
     chosen, used_cols, curve = [], [], []
     remaining = list(candidate_sensors)
     while remaining and len(chosen) < max_blocks:
-        best_s, best_f1, best_cols = None, -1.0, None
-        for s in remaining:
-            trial_cols = used_cols + cols[s]
-            f1 = _cv_f1(X[:, trial_cols], y, seed=seed)
-            if f1 > best_f1:
-                best_s, best_f1, best_cols = s, f1, trial_cols
-            if progress:
-                progress()
-        chosen.append(best_s); used_cols = best_cols; remaining.remove(best_s)
+        scores = Parallel(n_jobs=jobs)(
+            delayed(_cv_f1)(X[:, used_cols + cols[s]], y, seed, 4, 1) for s in remaining)
+        bi = int(max(range(len(remaining)), key=lambda i: scores[i]))
+        best_s, best_f1 = remaining[bi], scores[bi]
+        used_cols = used_cols + cols[best_s]
+        chosen.append(best_s); remaining.remove(best_s)
         curve.append((best_s, round(best_f1, 4)))
+        if progress:
+            progress(1)
         if best_f1 >= target_f1:
             break
     return curve
