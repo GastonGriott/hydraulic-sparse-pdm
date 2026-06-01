@@ -1,0 +1,5 @@
+hydra_cache/
+data_raw/
+__pycache__/
+*.pyc
+*.zip
