@@ -174,10 +174,10 @@ def model_zoo():
                          {"max_depth": [3, 5, 10, 20, None], "criterion": ["gini", "entropy"],
                           "min_samples_split": randint(2, 20)}),
         "RandomForest": (lambda: RandomForestClassifier(random_state=0, n_jobs=1),
-                         {"n_estimators": randint(100, 600), "max_depth": [5, 10, 20, None],
+                         {"n_estimators": randint(100, 300), "max_depth": [5, 10, 20, None],
                           "max_features": ["sqrt", "log2", 0.5]}),
         "ExtraTrees": (lambda: ExtraTreesClassifier(random_state=0, n_jobs=1),
-                       {"n_estimators": randint(100, 600), "max_depth": [5, 10, 20, None],
+                       {"n_estimators": randint(100, 300), "max_depth": [5, 10, 20, None],
                         "max_features": ["sqrt", "log2", 0.5]}),
         "SVM": (lambda: SVC(random_state=0),
                 {"kernel": ["linear", "rbf", "poly"], "C": uniform(0.1, 100), "gamma": ["scale", "auto"]}),
@@ -191,14 +191,14 @@ def model_zoo():
     try:
         import lightgbm as lgb
         zoo["LightGBM"] = (lambda: lgb.LGBMClassifier(n_jobs=1, random_state=0, verbosity=-1),
-                           {"n_estimators": randint(100, 600), "num_leaves": randint(15, 63),
+                           {"n_estimators": randint(100, 300), "num_leaves": randint(15, 63),
                             "learning_rate": uniform(0.01, 0.3)})
     except Exception:
         pass
     try:
         import xgboost as xgb
         zoo["XGBoost"] = (lambda: xgb.XGBClassifier(n_jobs=1, random_state=0, verbosity=0),
-                          {"n_estimators": randint(100, 600), "max_depth": randint(3, 10),
+                          {"n_estimators": randint(100, 300), "max_depth": randint(3, 10),
                            "learning_rate": uniform(0.01, 0.3)})
     except Exception:
         pass
@@ -219,7 +219,7 @@ def tune_uniform(estimator_factory, param_dist, X, y, n_iter=80, seed=0):
     sobre un pipeline escalado. Devuelve best_params_ con prefijo 'clf__'."""
     from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
     pdist = {f"clf__{k}": v for k, v in param_dist.items()}
-    skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=seed)
+    skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)
     rs = RandomizedSearchCV(_pipe(estimator_factory), pdist, n_iter=n_iter, scoring="f1_macro",
                             cv=skf, random_state=seed, n_jobs=-1, refit=True)
     rs.fit(X, y)
