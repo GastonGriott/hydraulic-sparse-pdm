@@ -64,7 +64,11 @@ def build_xy(data_dir="data_raw", cache=CACHE_DIR):
     else:
         X, feature_names = build_feature_matrix(sensors)
         np.savez_compressed(xp, X=X, names=np.array(feature_names, dtype=object))
-    targets = {name: profile.iloc[:, col].to_numpy() for name, col in TARGETS.items()}
+    # Codificar etiquetas a 0..n-1 consecutivas: XGBoost lo exige (accum es {90,100,115,130});
+    # invariante para sklearn/lightgbm (el F1 no cambia bajo relabeling).
+    from sklearn.preprocessing import LabelEncoder
+    targets = {name: LabelEncoder().fit_transform(profile.iloc[:, col].to_numpy())
+               for name, col in TARGETS.items()}
     return X, feature_names, targets
 
 
